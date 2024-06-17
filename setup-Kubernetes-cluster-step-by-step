@@ -1,0 +1,96 @@
+# Here's a step-by-step guide to set up a Kubernetes cluster
+# with kubeadm, using Docker as the container runtime interface (CRI)
+# and Calico as the container network interface (CNI). 
+# This guide will cover setting up one master node and two worker nodes.
+# Step 1: Prepare the Nodes
+# Disable Swap:
+
+Prerequisites
+
+    Operating System: All nodes should be running a compatible Linux distribution, such as Ubuntu 20.04 or CentOS 7/8.
+    Network Configuration: Ensure that all nodes can communicate with each other.
+    Disable Swap: Kubernetes requires that swap be disabled.
+
+sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+# Update the Package Index and Install Required Packages:
+
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl
+
+# Step 2: Install Docker
+# Install Docker:
+
+sudo apt-get install -y docker.io
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Step 3: Install kubeadm, kubelet, and kubectl
+# Add the Kubernetes APT Repository:
+
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+
+# Install kubeadm, kubelet, and kubectl:
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+# Step 4: Initialize the Kubernetes Master Node
+# Initialize the Master Node:
+
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+
+# After initialization, you'll see a kubeadm join command in the output. Save this command as you'll need it to join the worker nodes to the cluster.
+
+#Set Up kubeconfig for the Master Node:
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Step 5: Install Calico for Networking
+
+Apply the Calico YAML:
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+# Step 6: Join the Worker Nodes to the Cluster
+# On each worker node, run the kubeadm join command you saved earlier. It should look something like this:
+
+sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+
+# Step 7: Verify the Cluster
+# Check the Nodes:
+
+kubectl get nodes
+
+# You should see all three nodes (one master and two workers) listed.
+# Summary of Commands
+
+#On All Nodes:
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+#On Master Node:
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+On Worker Nodes:
+
+Run the kubeadm join command provided by the kubeadm init output from the master node setup.
+Final Check
+
+On Master Node:
+kubectl get nodes
+You should see the master and the two worker nodes listed, indicating that your Kubernetes cluster is set up successfully.
