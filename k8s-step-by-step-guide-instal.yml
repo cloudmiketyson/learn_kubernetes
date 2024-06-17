@@ -1,0 +1,158 @@
+Here's a step-by-step guide for installing a Kubernetes cluster using kubeadm, Calico, and Docker:
+Prerequisites:
+
+Multiple Servers: You'll need at least one master node and one worker node (more nodes are optional for a high-availability cluster). All servers should be running a Linux distribution that supports kubeadm (e.g., Ubuntu, CentOS).
+SSH access: Ensure you have SSH access with sudo privileges on all servers.
+Docker installed: Docker should be installed and running on all nodes. You can find instructions for installing Docker on different Linux distributions on the official Docker website https://docs.docker.com/engine/install/.
+
+Install using the apt repository
+Before you install Docker Engine for the first time on a new host machine, you need to set up the Docker repository. Afterward, you can install and update Docker from the repository.
+
+1. Set up Docker's apt repository.
+#    script1
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+#script2
+To install the latest version, run:
+    sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    Verify that the Docker Engine installation is successful by running the hello-world image.
+    sudo docker run hello-world
+
+    To create the docker group and add your user:
+        sudo groupadd docker
+        sudo usermod -aG docker $USER
+        newgrp docker
+    Log out and log back in so that your group membership is re-evaluated.
+
+    Verify that you can run docker commands without sudo.
+    docker run hello-world
+
+
+
+    Configure Docker to start on boot with systemd
+    sudo systemctl enable docker.service
+    sudo systemctl enable containerd.service
+
+If you initially ran Docker CLI commands using sudo before adding your user to the docker group, you may see the following error:
+
+
+WARNING: Error loading config file: /home/user/.docker/config.json -
+stat /home/user/.docker/config.json: permission denied
+This error indicates that the permission settings for the ~/.docker/ directory are incorrect, due to having used the sudo command earlier.
+
+To fix this problem, either remove the ~/.docker/ directory (it's recreated automatically, but any custom settings are lost), or change its ownership and permissions using the following commands:
+
+
+ sudo chown "$USER":"$USER" /home/"$USER"/.docker -R
+ sudo chmod g+rwx "$HOME/.docker" -R
+
+
+Prepare the Nodes
+
+Disable swap: Swap can cause issues with Kubernetes. 
+Run sudo swapoff -a on all nodes to disable swap. 
+Consider editing /etc/fstab to prevent swap from automatically activating at boot.
+sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+Update and upgrade: Update package lists and upgrade existing packages with commands like 
+sudo apt update && sudo apt upgrade (for Ubuntu/Debian) or sudo yum update && sudo yum upgrade (for CentOS/RHEL).
+2. Install kubeadm, kubelet, and kubectl
+
+On all nodes:
+# Install kubeadm, kubelet, and kubectl
+sudo apt install -y kubeadm kubelet kubectl (for Ubuntu/Debian)
+# OR
+sudo yum install -y kubeadm kubelet kubectl (for CentOS/RHEL)
+
+
+Initialize the Master Node
+
+On the master node:
+# Initialize the control plane with a pod network CIDR (change if needed)
+kubeadm init --pod-network-cidr=192.168.0.0/16
+
+# Copy the node join command (keep this for adding worker nodes)
+kubeadm token list
+This command will initialize the control plane components on the master node and generate a join token for worker nodes. Make sure to copy the join command displayed, as you'll need it later.
+
+Join Worker Nodes
+
+On each worker node:
+# Replace "<join_token>" with the actual token from the master node
+sudo kubeadm join <master_ip>:<port> --token <join_token> --discovery-token-ca-cert-hash sha256:<hash>
+
+Replace <master_ip> with the IP address of your master node, <port> with the port number displayed in the kubeadm init output (usually 6443), and <join_token> with the actual token you copied earlier. The <hash> value can be found in the kubeadm init output.
+
+Verify Cluster Health
+
+On the master node:
+# Check node status
+kubectl get nodes
+
+# Check pod status in all namespaces
+kubectl get pods --all-namespaces
+
+
+Install Calico Network Plugin
+
+Calico is a popular network plugin for Kubernetes that provides policy-based networking for pods.
+
+Using kubectl apply:
+# Download the Calico YAML manifest
+curl https://docs.projectcalico.org/v3.20/getting-started/kubernetes/installation/manifests/tigera-operator.yaml -o calico.yaml
+
+# Apply the manifest to deploy Calico
+kubectl apply -f calico.yaml
+
+=========================================================
+THE CODE ABOVE DIDN'T QUITE WORK, BUT THE ONE BELOW DOES
+==========================================================
+  RUN ON THE MASTER:
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install docker.io -y
+sudo chmod 666 /var/run/docker.sock
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt update
+sudo apt install -y kubeadm=1.28.1-1.1 kubelet=1.28.1-1.1 kubectl=1.28.1-1.1
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v0.49.0/deploy/static/provider/baremetal/deploy.yaml
+
+kubectl get pods --all-namespaces
+kubectl get nodes
+
+==============================
+RUN ON THE WORKER NODES
+sudo apt update && sudo apt upgrade -y
+sudo apt install docker.io -y
+sudo chmod 666 /var/run/docker.sock
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+sudo apt update
+sudo apt install -y kubeadm=1.28.1-1.1 kubelet=1.28.1-1.1 kubectl=1.28.1-1.1
+kubeadm join 192.168.1.231:6443 --token <token>  --discovery-token-ca-cert-hash <sha256:.....>
